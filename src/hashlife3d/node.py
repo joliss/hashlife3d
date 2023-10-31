@@ -2,12 +2,15 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .canonical import Canonical
+from .canonical import Canonical, interned
 from .state import State
 from .grid import Grid
 
 
 class QuadTree(Canonical):
+    """
+    A quadtree, specifically a tree pyramid with a square base.
+    """
     def width(self):
         return 2 ** self.level
 
@@ -96,6 +99,7 @@ class QuadTreeBranch(QuadTree):
         grids = np.vectorize(lambda child: child.to_grid(), otypes=[object])(self.children)
         return np.block(grids.tolist()).view(Grid)
 
+    @interned
     def generate_octree(self):
         """
         Given a (4n, 4n) QuadTree, generate a (n, 2n, 2n) Octree, computing n
@@ -189,6 +193,7 @@ class Octree(Canonical):
     def __str__(self):
         return "\n\n".join([str(quad_tree) for quad_tree in self.quad_trees()])
 
+    @interned
     def most_recent_quad_tree(self):
         return self.quad_trees()[-1]
 
