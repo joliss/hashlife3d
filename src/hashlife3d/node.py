@@ -96,16 +96,22 @@ class QuadTreeBranch(QuadTree):
         grids = np.vectorize(lambda child: child.to_grid(), otypes=[object])(self.children)
         return np.block(grids.tolist()).view(Grid)
 
-    def next_generation_octree(self):
+    def generate_octree(self):
+        """
+        Given a (4n, 4n) QuadTree, generate a (n, 2n, 2n) Octree, computing n
+        generations.
+        """
         assert self.level >= 2
         if self.level == 2:
-            return self._next_generation_octree_leaf()
+            # n = 1 case
+            return self._generate_octree_leaf()
+
+        # n is a multiple of 2 from here on out.
 
         # See the color coding in Figure 4 on
         # https://www.drdobbs.com/jvm/an-algorithm-for-compressing-space-and-t/184406478?pgno=1
 
-        # First, generate the red squares as octrees; unlike the HashLife
-        # algorithm, we don't just slice, but also advance a generation
+        # First, generate the red squares as octrees.
         four_by_four = flatten_quad_tree_array(self.children)
         eight_by_eight = flatten_quad_tree_array(four_by_four)
         assert four_by_four.shape == (4, 4)
@@ -117,20 +123,47 @@ class QuadTreeBranch(QuadTree):
             dtype=object
         )
         assert red_square_containers.shape == (3, 3)
-        # Instead of the red squares in the figure, we generate cubes
-        red_octrees = np.array(
-            [[container.next_generation_octree() for container in row] for row in red_square_containers],
+        # Instead of the red squares in the figure, we generate cuboids,
+        # advancing n/2 generations. This is unlike the HashLife algorithm,
+        # which instead of advancing just slices to generate its red squares.
+        generate_octree = np.vectorize(lambda container: container.generate_octree(), otypes=[object])
+        red_octrees = generate_octree(red_square_containers)
+        assert red_octrees.shape == (3, 3)
+        red_squares = np.vectorize(lambda octree: octree.most_recent_quad_tree(), otypes=[object])(red_octrees)
+        assert red_squares.shape == (3, 3)
+        green_square_containers = np.array(
+            [[QuadTreeBranch.from_children(red_squares[y:y+2, x:x+2]) for x in range(2)] for y in range(2)],
             dtype=object
         )
-        assert red_octrees.shape == (3, 3)
-        # green_square_containers = np.array(
-        #     [[QuadTreeBranch.from_children(red_squares[y:y+2, x:x+2]) for x in range(2)] for y in range(2)],
-        #     dtype=object
-        # )
-        # assert green_square_containers.shape == (2, 2)
-        # # Once again instead of the green squares in the figure, we generate cubes
+        assert green_square_containers.shape == (2, 2)
+        # Once again instead of the green squares in the figure, we generate
+        # cuboids, advancing another n/2 generations.
+        green_octrees = generate_octree(green_square_containers)
+        assert green_octrees.shape == (2, 2)
+        # Finally, assemble the green cuboids and the parts of the red cuboids that
+        # are behind them into a single octree.
+        if red_octrees[0, 0].level >= 1:
+            # The 6x6 large red square in the figure is made up of two layers for our HashLife 3D algorithm.
+            two_by_six_by_six = flatten_octree_array(red_octrees.reshape(1, 3, 3))
+            assert two_by_six_by_six.shape == (2, 6, 6)
+            red_parts = np.array(
+                [[OctreeBranch(two_by_six_by_six[0:2, y:y+2, x:x+2])
+                  for x in range(1, 5, 2)] for y in range(1, 5, 2)],
+                dtype=object)
+        else:
+            assert red_octrees[0, 0].level == 0
+            assert self.level == 3
+            # Geometrically, this is the same as the level >= 1 case, but we
+            # need to work the QuadTrees in the leaf nodes here.
+            six_by_six = flatten_quad_tree_array(np.vectorize(lambda o: o.quad_tree, otypes=[object])(red_octrees))
+            assert six_by_six.shape == (6, 6)
+            red_parts = np.array(
+                [[OctreeLeaf(QuadTreeBranch.from_children(six_by_six[y:y+2, x:x+2]))
+                  for x in range(1, 5, 2)] for y in range(1, 5, 2)],
+                dtype=object)
+        return OctreeBranch(np.stack([red_parts, green_octrees], axis=0))
 
-    def _next_generation_octree_leaf(self):
+    def _generate_octree_leaf(self):
         assert self.level == 2
         leafs = flatten_quad_tree_array(self.children)
         matrix = np.vectorize(lambda leaf: leaf.state, otypes=[object])(leafs)
@@ -155,6 +188,9 @@ class Octree(Canonical):
 
     def __str__(self):
         return "\n\n".join([str(quad_tree) for quad_tree in self.quad_trees()])
+
+    def most_recent_quad_tree(self):
+        return self.quad_trees()[-1]
 
 
 @dataclass(frozen=True, eq=False)
@@ -206,14 +242,14 @@ class OctreeBranch(Octree):
 
 def flatten_quad_tree_array(arr):
     """
-    Flatten a 2x2 array of quad tree children into 4x4, and a 4x4 array into 8x8.
+    Flatten an m by n array of quad trees into a 2m by 2n array.
     """
     assert arr.ndim == 2
     assert arr[0][0].level >= 1
-    width = arr.shape[0]
-    assert width == arr.shape[1]
-    flattened_arr = np.empty((2 * width, 2 * width), dtype=object)
-    for y in range(width):
+    height = arr.shape[0]
+    width = arr.shape[1]
+    flattened_arr = np.empty((2 * width, 2 * height), dtype=object)
+    for y in range(height):
         for x in range(width):
             flattened_arr[2*y:2*y+2, 2*x:2*x+2] = arr[y][x].children
     return flattened_arr
@@ -221,15 +257,17 @@ def flatten_quad_tree_array(arr):
 
 def flatten_octree_array(arr):
     """
-    Flatten a 2x2x2 array of octree children into 4x4x4, and a 4x4x4 array into 8x8x8.
+    Flatten an m by n by o array of octrees into a 2m by 2n by 2o array.
     """
     assert arr.ndim == 3
     assert arr[0][0][0].level >= 1
-    width = arr.shape[0]
+    depth = arr.shape[0]
+    height = arr.shape[1]
+    width = arr.shape[2]
     assert width == arr.shape[1] == arr.shape[2]
-    flattened_arr = np.empty((2 * width, 2 * width, 2 * width), dtype=object)
-    for t in range(width):
-        for y in range(width):
+    flattened_arr = np.empty((2 * depth, 2 * height, 2 * width), dtype=object)
+    for t in range(depth):
+        for y in range(height):
             for x in range(width):
                 flattened_arr[2*t:2*t+2, 2*y:2*y+2, 2*x:2*x+2] = arr[t][y][x].children
     return flattened_arr

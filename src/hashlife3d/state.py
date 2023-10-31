@@ -28,7 +28,7 @@ class State(IntEnum):
         """
         if self == State.UNINHABITABLE:
             return State.UNINHABITABLE
-        if self == State.ALIVE:
+        elif self == State.ALIVE:
             return State.ALIVE if neighbor_count in (2, 3) else State.DEAD
         else:
             return State.ALIVE if neighbor_count == 3 else State.DEAD

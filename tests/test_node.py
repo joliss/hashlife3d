@@ -11,23 +11,44 @@ _X__
 _X__
 """.strip()
 
+blinker_str2 = """
+____
+____
+XXX_
+____
+""".strip()
+
 def test_quadtree_string_handling():
     node = QuadTree.from_str(blinker_str)
     assert node.level == 2
     assert str(node) == blinker_str
 
-def test_next_generation_octree_small():
+def test_generate_octree_level_2():
     node = QuadTree.from_str(blinker_str)
-    assert str(node.next_generation_octree()) == """
+    assert str(node.generate_octree()) == """
 __
 XX
 """.strip()
 
-def test_next_generation_octree():
+def test_generate_octree_level_3():
     grid = Grid.uninhabitable(8, 8)
     grid[2:6, 2:6] = Grid.from_str(blinker_str)
     node = QuadTree.from_grid(grid)
-    octree = node.next_generation_octree()
+    octree = node.generate_octree()
+    assert str(octree) == '\n\n'.join([blinker_str2, blinker_str])
+
+def test_generate_octree_level_4():
+    grid = Grid.uninhabitable(16, 16)
+    grid[6:10, 6:10] = Grid.from_str(blinker_str)
+    node = QuadTree.from_grid(grid)
+    octree = node.generate_octree()
+    # Construct expected output by surrounding blinkers with uninhabitable cells
+    grid_expected = Grid.uninhabitable(8, 8)
+    grid_expected[2:6, 2:6] = Grid.from_str(blinker_str)
+    blinker_str_extended = str(grid_expected)
+    grid_expected[2:6, 2:6] = Grid.from_str(blinker_str2)
+    blinker_str2_extended = str(grid_expected)
+    assert str(octree) == '\n\n'.join([blinker_str2_extended, blinker_str_extended] * 2)
 
 def test_flatten_quad_tree_array():
     node = QuadTree.from_str(blinker_str)
