@@ -7,12 +7,58 @@ from .state import State
 from .grid import Grid
 
 
-class QuadTree(Canonical):
+class KdQuadTree(Canonical):
+    """
+    A k-dimensional generalization of the quadtree.
+
+    Unlike a true k-d tree, each node of this splits in each dimension
+    simultaneously. This in 2D, this is a quadtree; in 3D, an octree.
+    """
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(level={self.level})"
+
+    def sidelength(self):
+        return 2 ** self.level
+
+
+@dataclass(frozen=True, eq=False)
+class KdQuadTreeLeaf(KdQuadTree):
+    element: object
+    level = 0
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}({repr(self.element)})"
+
+
+@dataclass(frozen=True, eq=False)
+class KdQuadTreeBranch(KdQuadTree):
+    children: np.ndarray # k-dimensional array with shape (2, 2, 2, ...)
+    level: int = field(init=False)
+
+    def __post_init__(self):
+        assert self.children.ndim == self.ndim
+        assert all(shape == 2 for shape in self.children.shape)
+        object.__setattr__(self, "level", self._checklevel())
+
+    def _checklevel(self):
+        child_level = self.children.ravel()[0].level
+        assert all(child.level == child_level for child in self.children.ravel()), "Child nodes must have the same level"
+        return child_level + 1
+
+    def __iter__(self):
+        yield from self.children.ravel()
+
+
+class QuadTree(KdQuadTree):
     """
     A quadtree, specifically a tree pyramid with a square base.
     """
+
+    ndim = 2
+
     def width(self):
-        return 2 ** self.level
+        return self.sidelength()
 
     @staticmethod
     def from_str(s):
@@ -35,65 +81,31 @@ class QuadTree(Canonical):
         ne = QuadTree.from_grid(grid[:width//2, width//2:])
         sw = QuadTree.from_grid(grid[width//2:, :width//2])
         se = QuadTree.from_grid(grid[width//2:, width//2:])
-        return QuadTreeBranch(nw, ne, sw, se)
+        return QuadTreeBranch(np.array([[nw, ne], [sw, se]], dtype=object))
 
 
-@dataclass(frozen=True, eq=False)
-class QuadTreeLeaf(QuadTree):
-    state: State
-    level = 0
-
+class QuadTreeLeaf(QuadTree, KdQuadTreeLeaf):
     def __post_init__(self):
-        assert isinstance(self.state, State)
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}({self.state})"
-
-    _STRINGS = ['_', 'X', '.']
+        super().__post_init__()
+        assert isinstance(self.element, State)
 
     def to_grid(self):
-        return Grid.from_list([[self.state]])
-
-QuadTreeLeaf.DEAD = QuadTreeLeaf(State.DEAD)
-QuadTreeLeaf.ALIVE = QuadTreeLeaf(State.ALIVE)
-QuadTreeLeaf.UNINHABITABLE = QuadTreeLeaf(State.UNINHABITABLE)
+        return Grid.from_list([[self.element]])
 
 
-@dataclass(frozen=True, eq=False)
-class QuadTreeBranch(QuadTree):
-    nw: QuadTree
-    ne: QuadTree
-    sw: QuadTree
-    se: QuadTree
-    level: int = field(init=False)
-
-    def __post_init__(self):
-        object.__setattr__(self, "level", self._checklevel(self.nw, self.ne, self.sw, self.se))
-
-    @classmethod
-    def _checklevel(cls, nw, ne, sw, se):
-        child_level = nw.level
-        if child_level != ne.level or child_level != sw.level or child_level != se.level:
-            raise ValueError("Child nodes must have the same level")
-        return child_level + 1
-
+class QuadTreeBranch(QuadTree, KdQuadTreeBranch):
     @property
-    def children(self):
-        return np.array([
-            [self.nw, self.ne],
-            [self.sw, self.se]
-        ], dtype=object)
-
-    @classmethod
-    def from_children(cls, children):
-        return cls(children[0, 0], children[0, 1], children[1, 0], children[1, 1])
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}(level={self.level})"
-
-    def __iter__(self):
-        yield from [self.nw, self.ne]
-        yield from [self.sw, self.se]
+    def nw(self):
+        return self.children[0, 0]
+    @property
+    def ne(self):
+        return self.children[0, 1]
+    @property
+    def sw(self):
+        return self.children[1, 0]
+    @property
+    def se(self):
+        return self.children[1, 1]
 
     def to_grid(self):
         grids = np.vectorize(lambda child: child.to_grid(), otypes=[object])(self.children)
@@ -123,7 +135,7 @@ class QuadTreeBranch(QuadTree):
         # The red_square_containers aren't in the figure, but imagine each red
         # square being contained in a 4x4 square.
         red_square_containers = np.array(
-            [[QuadTreeBranch.from_children(four_by_four[y:y+2, x:x+2]) for x in range(3)] for y in range(3)],
+            [[QuadTreeBranch(four_by_four[y:y+2, x:x+2]) for x in range(3)] for y in range(3)],
             dtype=object
         )
         assert red_square_containers.shape == (3, 3)
@@ -136,7 +148,7 @@ class QuadTreeBranch(QuadTree):
         red_squares = np.vectorize(lambda octree: octree.most_recent_quad_tree(), otypes=[object])(red_octrees)
         assert red_squares.shape == (3, 3)
         green_square_containers = np.array(
-            [[QuadTreeBranch.from_children(red_squares[y:y+2, x:x+2]) for x in range(2)] for y in range(2)],
+            [[QuadTreeBranch(red_squares[y:y+2, x:x+2]) for x in range(2)] for y in range(2)],
             dtype=object
         )
         assert green_square_containers.shape == (2, 2)
@@ -162,7 +174,7 @@ class QuadTreeBranch(QuadTree):
             six_by_six = flatten_quad_tree_array(np.vectorize(lambda o: o.quad_tree, otypes=[object])(red_octrees))
             assert six_by_six.shape == (6, 6)
             red_parts = np.array(
-                [[OctreeLeaf(QuadTreeBranch.from_children(six_by_six[y:y+2, x:x+2]))
+                [[OctreeLeaf(QuadTreeBranch(six_by_six[y:y+2, x:x+2]))
                   for x in range(1, 5, 2)] for y in range(1, 5, 2)],
                 dtype=object)
         return OctreeBranch(np.stack([red_parts, green_octrees], axis=0))
@@ -170,7 +182,7 @@ class QuadTreeBranch(QuadTree):
     def _generate_octree_leaf(self):
         assert self.level == 2
         leafs = flatten_quad_tree_array(self.children)
-        matrix = np.vectorize(lambda leaf: leaf.state, otypes=[object])(leafs)
+        matrix = np.vectorize(lambda leaf: leaf.element, otypes=[object])(leafs)
         def neighbor_count(x, y):
             neighborhood = np.copy(matrix[y-1:y+2, x-1:x+2])
             neighborhood[1][1] = State.DEAD # don't count self
@@ -180,15 +192,25 @@ class QuadTreeBranch(QuadTree):
         return OctreeLeaf(quad_tree)
 
 
-class Octree(Canonical):
+class Octree(KdQuadTree):
+    """
+    An octree, representing how the grid evolves over time.
+
+    Indexed by self.children[t][y][x], where t is time, and x and y are the grid
+    coordinates. We call the t dimension "depth".
+
+    The leaf elements of the octree are 2x2 quad trees containing states. Thus
+    the octree has a cuboid shape, storing how a grid of 2n by 2n states evolves
+    over n generations.
+    """
+
+    ndim = 3
+
     def width(self):
-        return 2 * 2 ** self.level
+        return 2 * self.sidelength()
 
     def depth(self):
-        return 2 ** self.level
-
-    def __repr__(self):
-        return f"{self.__class__.__name__}(level={self.level})"
+        return self.sidelength()
 
     def __str__(self):
         return "\n\n".join([str(quad_tree) for quad_tree in self.quad_trees()])
@@ -198,14 +220,15 @@ class Octree(Canonical):
         return self.quad_trees()[-1]
 
 
-@dataclass(frozen=True, eq=False)
-class OctreeLeaf(Octree):
-    quad_tree: QuadTree
-    level = 0
+class OctreeLeaf(Octree, KdQuadTreeLeaf):
+    @property
+    def quad_tree(self):
+        return self.element
 
     def __post_init__(self):
+        super().__post_init__()
         if self.quad_tree.level != 1:
-            raise ValueError(f"QuadTree must be level 1")
+            raise ValueError(f"QuadTree must be level 1, got {self.quad_tree.level}")
 
     def quad_trees(self):
         arr = np.array([self.quad_tree], dtype=object)
@@ -213,36 +236,35 @@ class OctreeLeaf(Octree):
         return arr
 
 
-@dataclass(frozen=True, eq=False)
-class OctreeBranch(Octree):
-    children: np.ndarray # 2x2x2 array of Octrees, children[t][y][x]
-    level: int = field(init=False)
-
-    def __post_init__(self):
-        assert self.children.shape == (2, 2, 2)
-        object.__setattr__(self, "level", self._checklevel(self.children))
-
-    @classmethod
-    def _checklevel(cls, children):
-        child_level = children[0, 0, 0].level
-        get_level = np.vectorize(lambda child: child.level, otypes=[int])
-        if not np.all(get_level(children) == child_level):
-            raise ValueError("Child nodes must have the same level")
-        return child_level + 1
-
-    def __iter__(self):
-        yield from self.children
-
+class OctreeBranch(Octree, KdQuadTreeBranch):
     def quad_trees(self):
         assert self.level <= 4, "this becomes too slow"
         def reassemble_quad_tree(octree_quad):
-            to_quad_trees = np.vectorize(lambda octree: octree.quad_trees(), otypes=[object])
-            [[nws, nes], [sws, ses]] = to_quad_trees(octree_quad)
-            return np.array([QuadTreeBranch(nw, ne, sw, se) for (nw, ne, sw, se) in zip(nws, nes, sws, ses)], dtype=object)
+            [[nws, nes], [sws, ses]] = np.vectorize(lambda octree: octree.quad_trees(), otypes=[object])(octree_quad)
+            return np.array([QuadTreeBranch(np.array([[nw, ne], [sw, se]], dtype="object")) for (nw, ne, sw, se) in zip(nws, nes, sws, ses)], dtype=object)
         return np.concatenate([
             reassemble_quad_tree(self.children[t])
             for t in range(2)
         ])
+
+
+class BinaryTree(KdQuadTree):
+    """
+    This binary tree is the 1-dimensional equivalent to the quadtree (in 2D) or octree (in 3D).
+    """
+
+    ndim = 1
+
+    def depth(self):
+        return self.side_length()
+
+
+class BinaryTreeLeaf(BinaryTree, KdQuadTreeLeaf):
+    pass
+
+
+class BinaryTreeBranch(BinaryTree, KdQuadTreeBranch):
+    pass
 
 
 def flatten_quad_tree_array(arr):

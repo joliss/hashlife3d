@@ -10,7 +10,7 @@ class State(IntEnum):
 
     DEAD = 0
     ALIVE = 1
-    UNINHABITABLE = 2
+    UNINHABITABLE = -1
 
     def __str__(self):
         return STATE_STRINGS[self]
