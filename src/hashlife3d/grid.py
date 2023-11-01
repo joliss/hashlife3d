@@ -16,10 +16,9 @@ class Grid(np.ndarray):
     def __str__(self):
         if self.ndim != 2:
             warnings.warn(f'Grid should be 2-dimensional, got shape {self.shape}')
-            return repr(self)
+            return super().__str__()
         elif self.shape[0] > 0 and self.shape[1] > 0 and not isinstance(self[0, 0], State):
-            warnings.warn(f'Grid should contain States, not {repr(self[0, 0])}')
-            return repr(self)
+            return super().__str__()
         return '\n'.join(''.join(str(state) for state in row) for row in self)
 
     @classmethod

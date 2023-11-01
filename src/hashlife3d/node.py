@@ -270,6 +270,16 @@ class BinaryTree(KdQuadtree):
             ], dtype=object))
 
 
+    def population_quadtree(self):
+        """
+        Return a quadtree of the population of the binary tree summed across time.
+        """
+        if self.level == 0:
+            return state_to_population_quadtree(self.element)
+        else:
+            return add_population_quadtrees(self.children[0].population_quadtree(), self.children[1].population_quadtree())
+
+
 class BinaryTreeLeaf(BinaryTree, KdQuadtreeLeaf):
     def __iter__(self):
         yield self.element
@@ -319,3 +329,32 @@ def flatten_octree_array(arr):
             for x in range(width):
                 flattened_arr[2*t:2*t+2, 2*y:2*y+2, 2*x:2*x+2] = arr[t][y][x].children
     return flattened_arr
+
+
+@interned
+def state_to_population_quadtree(state_quadtree):
+    """
+    Given a quadtree of states, return a quadtree of populations. This is a
+    simple cast to integer.
+    """
+    if state_quadtree.level == 0:
+        return QuadtreeLeaf(int(state_quadtree.element))
+    else:
+        return QuadtreeBranch(np.vectorize(state_to_population_quadtree, otypes=[object])(state_quadtree.children))
+
+
+@interned
+def add_population_quadtrees(tree1, tree2):
+    """
+    Given two quadtree of populations, return a quadtree of the sum of the
+    populations.
+    """
+    if tree1.level == 0:
+        if tree1.element == -1:
+            # Uninhabitable
+            assert tree2.element == -1
+            return QuadtreeLeaf(-1)
+        else:
+            return QuadtreeLeaf(tree1.element + tree2.element)
+    else:
+        return QuadtreeBranch(np.vectorize(add_population_quadtrees, otypes=[object])(tree1.children, tree2.children))
