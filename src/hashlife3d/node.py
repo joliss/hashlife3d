@@ -128,8 +128,8 @@ class QuadtreeBranch(Quadtree, KdQuadtreeBranch):
         # https://www.drdobbs.com/jvm/an-algorithm-for-compressing-space-and-t/184406478?pgno=1
 
         # First, generate the red squares as octrees.
-        four_by_four = flatten_quad_tree_array(self.children)
-        eight_by_eight = flatten_quad_tree_array(four_by_four)
+        four_by_four = flatten_quadtree_array(self.children)
+        eight_by_eight = flatten_quadtree_array(four_by_four)
         assert four_by_four.shape == (4, 4)
         assert eight_by_eight.shape == (8, 8)
         # The red_square_containers aren't in the figure, but imagine each red
@@ -145,7 +145,7 @@ class QuadtreeBranch(Quadtree, KdQuadtreeBranch):
         generate_octree = np.vectorize(lambda container: container.generate_octree(), otypes=[object])
         red_octrees = generate_octree(red_square_containers)
         assert red_octrees.shape == (3, 3)
-        red_squares = np.vectorize(lambda octree: octree.most_recent_quad_tree(), otypes=[object])(red_octrees)
+        red_squares = np.vectorize(lambda octree: octree.most_recent_quadtree(), otypes=[object])(red_octrees)
         assert red_squares.shape == (3, 3)
         green_square_containers = np.array(
             [[QuadtreeBranch(red_squares[y:y+2, x:x+2]) for x in range(2)] for y in range(2)],
@@ -171,7 +171,7 @@ class QuadtreeBranch(Quadtree, KdQuadtreeBranch):
             assert self.level == 3
             # Geometrically, this is the same as the level >= 1 case, but we
             # need to work the Quadtrees in the leaf nodes here.
-            six_by_six = flatten_quad_tree_array(np.vectorize(lambda o: o.quad_tree, otypes=[object])(red_octrees))
+            six_by_six = flatten_quadtree_array(np.vectorize(lambda o: o.quadtree, otypes=[object])(red_octrees))
             assert six_by_six.shape == (6, 6)
             red_parts = np.array(
                 [[OctreeLeaf(QuadtreeBranch(six_by_six[y:y+2, x:x+2]))
@@ -181,15 +181,15 @@ class QuadtreeBranch(Quadtree, KdQuadtreeBranch):
 
     def _generate_octree_leaf(self):
         assert self.level == 2
-        leafs = flatten_quad_tree_array(self.children)
+        leafs = flatten_quadtree_array(self.children)
         matrix = np.vectorize(lambda leaf: leaf.element, otypes=[object])(leafs)
         def neighbor_count(x, y):
             neighborhood = np.copy(matrix[y-1:y+2, x-1:x+2])
             neighborhood[1][1] = State.DEAD # don't count self
             return np.count_nonzero(neighborhood == State.ALIVE)
         new_states = [[matrix[y][x].next_state(neighbor_count(x, y)) for x in range(1, 3)] for y in range(1, 3)]
-        quad_tree = Quadtree.from_grid(new_states)
-        return OctreeLeaf(quad_tree)
+        quadtree = Quadtree.from_grid(new_states)
+        return OctreeLeaf(quadtree)
 
 
 class Octree(KdQuadtree):
@@ -213,32 +213,32 @@ class Octree(KdQuadtree):
         return self.sidelength()
 
     def __str__(self):
-        return "\n\n".join([str(quad_tree) for quad_tree in self.quad_trees()])
+        return "\n\n".join([str(quadtree) for quadtree in self.quadtrees()])
 
     @interned
-    def most_recent_quad_tree(self):
-        return self.quad_trees().most_recent()
+    def most_recent_quadtree(self):
+        return self.quadtrees().most_recent()
 
 
 class OctreeLeaf(Octree, KdQuadtreeLeaf):
     @property
-    def quad_tree(self):
+    def quadtree(self):
         return self.element
 
     def __post_init__(self):
         super().__post_init__()
-        if self.quad_tree.level != 1:
-            raise ValueError(f"Quadtree must be level 1, got {self.quad_tree.level}")
+        if self.quadtree.level != 1:
+            raise ValueError(f"Quadtree must be level 1, got {self.quadtree.level}")
 
-    def quad_trees(self):
-        return BinaryTreeLeaf(self.quad_tree)
+    def quadtrees(self):
+        return BinaryTreeLeaf(self.quadtree)
 
 
 class OctreeBranch(Octree, KdQuadtreeBranch):
     @interned
-    def quad_trees(self):
+    def quadtrees(self):
         return BinaryTreeBranch(np.array([
-            BinaryTree.compose(np.vectorize(lambda octree: octree.quad_trees(), otypes=[object])(self.children[t]))
+            BinaryTree.compose(np.vectorize(lambda octree: octree.quadtrees(), otypes=[object])(self.children[t]))
             for t in range(2)
         ], dtype=object))
 
@@ -288,7 +288,7 @@ class BinaryTreeBranch(BinaryTree, KdQuadtreeBranch):
         return self.children[1].most_recent()
 
 
-def flatten_quad_tree_array(arr):
+def flatten_quadtree_array(arr):
     """
     Flatten an m by n array of quad trees into a 2m by 2n array.
     """
