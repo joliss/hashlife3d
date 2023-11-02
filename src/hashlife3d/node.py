@@ -269,13 +269,12 @@ class BinaryTree(KdQuadtree):
                 for t in range(2)
             ], dtype=object))
 
-
     def population_quadtree(self):
         """
         Return a quadtree of the population of the binary tree summed across time.
         """
         if self.level == 0:
-            return state_to_population_quadtree(self.element)
+            return state_quadtree_to_population_quadtree(self.element)
         else:
             return add_population_quadtrees(self.children[0].population_quadtree(), self.children[1].population_quadtree())
 
@@ -332,7 +331,7 @@ def flatten_octree_array(arr):
 
 
 @interned
-def state_to_population_quadtree(state_quadtree):
+def state_quadtree_to_population_quadtree(state_quadtree):
     """
     Given a quadtree of states, return a quadtree of populations. This is a
     simple cast to integer.
@@ -340,7 +339,7 @@ def state_to_population_quadtree(state_quadtree):
     if state_quadtree.level == 0:
         return QuadtreeLeaf(int(state_quadtree.element))
     else:
-        return QuadtreeBranch(np.vectorize(state_to_population_quadtree, otypes=[object])(state_quadtree.children))
+        return QuadtreeBranch(np.vectorize(state_quadtree_to_population_quadtree, otypes=[object])(state_quadtree.children))
 
 
 @interned
