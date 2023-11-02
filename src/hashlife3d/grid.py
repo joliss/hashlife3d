@@ -34,3 +34,9 @@ class Grid(np.ndarray):
         grid = np.empty((height, width), dtype=object)
         grid[:] = State.UNINHABITABLE
         return grid.view(cls)
+
+    @classmethod
+    def dead(cls, width, height):
+        grid = np.empty((height, width), dtype=object)
+        grid[:] = State.DEAD
+        return grid.view(cls)
