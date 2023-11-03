@@ -12,6 +12,8 @@ pytest = "^7.4.3"
 scikit-image = "^0.22.0"
 python-ranges = "^1.2.2"
 py-spy = "^0.3.14"
+colour-science = "^0.4.3"
+pillow = "^10.1.0"
 
 [tool.poetry.dev-dependencies]
 
