@@ -268,6 +268,7 @@ class BinaryTree(KdQuadtree):
         return self.side_length()
 
     @classmethod
+    @interned
     def compose(cls, quadrants: np.ndarray):
         """
         Compose a 2x2 array of binary trees into a single binary tree.
@@ -283,6 +284,7 @@ class BinaryTree(KdQuadtree):
                 for t in range(2)
             ], dtype=object))
 
+    @interned
     def population_quadtree(self):
         """
         Return a quadtree of the population of the binary tree summed across time.

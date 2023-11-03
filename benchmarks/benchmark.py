@@ -18,9 +18,9 @@ blinker_grid = LazyGrid()
 blinker_grid.add_grid(Point2D(0, 0), Grid.from_str(blinker_str))
 
 
-def benchmark_snapshot():
-    densities = snapshot_from_grid(blinker_grid, CuboidExtent(Range(0, 3), Range(1, 4), Range(0, 32)), Point2D(3, 3))
+def benchmark_blinker():
+    densities = snapshot_from_grid(blinker_grid, CuboidExtent(Range(0, 3), Range(1, 4), Range(0, 10**9)), Point2D(3, 3))
 
 
 if __name__ == '__main__':
-    benchmark_snapshot()
+    benchmark_blinker()

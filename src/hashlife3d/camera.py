@@ -125,9 +125,11 @@ def densities_snapshot(binary_tree, original_cuboid, target_cuboid, target_resol
         if intersection:
             new_target = CuboidExtent(target_cuboid.x_range, target_cuboid.y_range, intersection)
             if intersection == cuboid_pair[t].t_range:
+                # Spans entire depth; base case
                 population_quadtree = binary_tree.children[t].population_quadtree()
                 snapshot_pair[t] = _snapshot_from_population_quadtree(population_quadtree, cuboid_pair[t], new_target, target_resolution)
             else:
+                # Doesn't span entire depth; recurse further
                 snapshot_pair[t] = densities_snapshot(binary_tree.children[t], cuboid_pair[t], new_target, target_resolution)
             if intersection.length() < target_cuboid.t_range.length():
                 snapshot_pair[t] *= intersection.length() / target_cuboid.t_range.length()
@@ -139,6 +141,9 @@ def densities_snapshot(binary_tree, original_cuboid, target_cuboid, target_resol
     return snapshot_pair[0] + snapshot_pair[1]
 
 def _snapshot_from_population_quadtree(population_quadtree, original_cuboid, target_cuboid, target_resolution: Point2D):
+    """
+    Return a snapshot (2D ndarray) of the population_quadtree at resolution `target_resolution`.
+    """
     assert target_cuboid in original_cuboid
     sl = population_quadtree.side_length()
     assert sl == original_cuboid.width == original_cuboid.height

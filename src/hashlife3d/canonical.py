@@ -40,8 +40,8 @@ def _to_tuple_recursive(obj):
     if isinstance(obj, np.ndarray):
         obj = obj.tolist()
     elif isinstance(obj, dict):
-        obj = obj.items()
-    if isinstance(obj, Iterable):
+        obj = list(obj.items())
+    if isinstance(obj, (list, tuple)):
         return tuple(_to_tuple_recursive(e) for e in obj)
     else:
         return obj
