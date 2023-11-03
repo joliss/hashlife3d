@@ -18,7 +18,7 @@ class KdQuadtree(Canonical):
     def __repr__(self):
         return f"{self.__class__.__name__}(level={self.level})"
 
-    def sidelength(self):
+    def side_length(self):
         return 2 ** self.level
 
 
@@ -58,7 +58,7 @@ class Quadtree(KdQuadtree):
     ndim = 2
 
     def width(self):
-        return self.sidelength()
+        return self.side_length()
 
     @staticmethod
     def from_str(s):
@@ -82,6 +82,20 @@ class Quadtree(KdQuadtree):
         sw = Quadtree.from_grid(grid[width//2:, :width//2])
         se = Quadtree.from_grid(grid[width//2:, width//2:])
         return QuadtreeBranch(np.array([[nw, ne], [sw, se]], dtype=object))
+
+    @interned
+    def total_population(self):
+        """
+        Return the total population of the quadtree.
+        """
+        if self.level == 0:
+            return self.element
+        else:
+            child_populations = np.vectorize(lambda child: child.total_population(), otypes=[object])(self.children)
+            return add_population_counts(
+                add_population_counts(child_populations[0, 0], child_populations[0, 1]),
+                add_population_counts(child_populations[1, 0], child_populations[1, 1])
+            )
 
 
 class QuadtreeLeaf(Quadtree, KdQuadtreeLeaf):
@@ -207,10 +221,10 @@ class Octree(KdQuadtree):
     ndim = 3
 
     def width(self):
-        return 2 * self.sidelength()
+        return 2 * self.side_length()
 
     def depth(self):
-        return self.sidelength()
+        return self.side_length()
 
     def __str__(self):
         return "\n\n".join([str(quadtree) for quadtree in self.quadtrees()])
@@ -297,6 +311,19 @@ class BinaryTreeBranch(BinaryTree, KdQuadtreeBranch):
         return self.children[1].most_recent()
 
 
+def flatten_binary_tree_array(arr):
+    """
+    Flatten an array of n binary trees into one of 2n binary trees.
+    """
+    assert arr.ndim == 1
+    assert arr[0].level >= 1
+    length = arr.shape[0]
+    flattened_arr = np.empty(2 * length, dtype=object)
+    for i in range(length):
+        flattened_arr[2*i:2*i+2] = arr[i].children
+    return flattened_arr
+
+
 def flatten_quadtree_array(arr):
     """
     Flatten an m by n array of quad trees into a 2m by 2n array.
@@ -349,11 +376,13 @@ def add_population_quadtrees(tree1, tree2):
     populations.
     """
     if tree1.level == 0:
-        if tree1.element == -1:
-            # Uninhabitable
-            assert tree2.element == -1
-            return QuadtreeLeaf(-1)
-        else:
-            return QuadtreeLeaf(tree1.element + tree2.element)
+        return QuadtreeLeaf(add_population_counts(tree1.element, tree2.element))
     else:
         return QuadtreeBranch(np.vectorize(add_population_quadtrees, otypes=[object])(tree1.children, tree2.children))
+
+def add_population_counts(i1, i2):
+    if i1 == -1:
+        assert i2 == -1
+        return -1
+    else:
+        return i1 + i2
