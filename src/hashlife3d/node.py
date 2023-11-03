@@ -22,7 +22,7 @@ class KdQuadtree(Canonical):
         return 2 ** self.level
 
 
-@dataclass(frozen=True, eq=False)
+@dataclass(frozen=True, eq=False, repr=False)
 class KdQuadtreeLeaf(KdQuadtree):
     element: object
     level = 0
@@ -31,19 +31,21 @@ class KdQuadtreeLeaf(KdQuadtree):
         return f"{self.__class__.__name__}({repr(self.element)})"
 
 
-@dataclass(frozen=True, eq=False)
+@dataclass(frozen=True, eq=False, repr=False)
 class KdQuadtreeBranch(KdQuadtree):
     children: np.ndarray # k-dimensional array with shape (2, 2, 2, ...)
     level: int = field(init=False)
 
     def __post_init__(self):
-        assert self.children.ndim == self.ndim
-        assert all(shape == 2 for shape in self.children.shape)
         object.__setattr__(self, "level", self._checklevel())
+        assert self.children.ndim == self.ndim
+        # This assertion is too slow to run in production.
+        # assert all(shape == 2 for shape in self.children.shape)
 
     def _checklevel(self):
-        child_level = self.children.ravel()[0].level
-        assert all(child.level == child_level for child in self.children.ravel()), "Child nodes must have the same level"
+        child_level = self.children.flat[0].level
+        # This assertion is too slow to run in production.
+        # assert all(child.level == child_level for child in self.children.ravel()), "Child nodes must have the same level"
         return child_level + 1
 
     def __iter__(self):
@@ -156,10 +158,10 @@ class QuadtreeBranch(Quadtree, KdQuadtreeBranch):
         # Instead of the red squares in the figure, we generate cuboids,
         # advancing n/2 generations. This is unlike the HashLife algorithm,
         # which instead of advancing just slices to generate its red squares.
-        generate_octree = np.vectorize(lambda container: container.generate_octree(), otypes=[object])
+        generate_octree = np.vectorize(QuadtreeBranch.generate_octree, otypes=[object])
         red_octrees = generate_octree(red_square_containers)
         assert red_octrees.shape == (3, 3)
-        red_squares = np.vectorize(lambda octree: octree.most_recent_quadtree(), otypes=[object])(red_octrees)
+        red_squares = np.vectorize(Octree.most_recent_quadtree, otypes=[object])(red_octrees)
         assert red_squares.shape == (3, 3)
         green_square_containers = np.array(
             [[QuadtreeBranch(red_squares[y:y+2, x:x+2]) for x in range(2)] for y in range(2)],

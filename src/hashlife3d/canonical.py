@@ -1,5 +1,6 @@
 from functools import wraps
 from collections.abc import Iterable
+from dataclasses import dataclass
 
 import numpy as np
 
@@ -7,20 +8,30 @@ import numpy as np
 _intern_pool = {}
 
 
-def intern_helper(func, *args, **kwargs):
-    key = _to_tuple_recursive((func, args, kwargs))
-    if key in _intern_pool:
-        return _intern_pool[key]
+@dataclass
+class CacheStats:
+    hits: int = 0
+    misses: int = 0
+
+
+def intern_helper(func, *args):
+    key = (func, *(_to_immutable(arg) for arg in args))
+    ret = _intern_pool.get(key)
+    if ret is not None:
+        func.cache_stats.hits += 1
+        return ret
     else:
-        obj = func(*args, **kwargs)
+        func.cache_stats.misses += 1
+        obj = func(*args)
         _intern_pool[key] = obj
         return obj
 
 
 def interned(new_function):
+    new_function.cache_stats = CacheStats()
     @wraps(new_function)
-    def wrapper(*args, **kwargs):
-        return intern_helper(new_function, *args, **kwargs)
+    def wrapper(*args):
+        return intern_helper(new_function, *args)
     return wrapper
 
 
@@ -32,16 +43,12 @@ class Canonical:
         return self is other
 
     @interned
-    def __new__(cls, *args, **kwargs):
+    def __new__(cls, *args):
         return super().__new__(cls)
 
-
-def _to_tuple_recursive(obj):
-    if isinstance(obj, np.ndarray):
-        obj = obj.tolist()
-    elif isinstance(obj, dict):
-        obj = list(obj.items())
-    if isinstance(obj, (list, tuple)):
-        return tuple(_to_tuple_recursive(e) for e in obj)
-    else:
-        return obj
+def _to_immutable(obj):
+    if type(obj) is np.ndarray:
+        # Trust that the items in the array are immutable
+        return obj.tobytes()
+    assert type(obj) not in (dict, tuple, list)
+    return obj
