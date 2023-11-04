@@ -11,9 +11,27 @@ from skimage.measure import block_reduce
 from skimage.transform import warp, AffineTransform
 from ranges import Range
 
+from .canonical import CacheStats
 from .node import BinaryTree, BinaryTreeBranch, BinaryTreeLeaf, flatten_quadtree_array, Quadtree, QuadtreeBranch
 from .extent import CuboidExtent, RectangleExtent, Point2D
-from .grid import LazyGrid
+from .grid import LazyGrid, GridFromQuadtree
+
+
+def _octree_extent_from_quadtree(quadtree_extent: RectangleExtent):
+    assert quadtree_extent.width % 4 == 0
+    quarter = quadtree_extent.width // 4
+    octree_extent = CuboidExtent(
+        Range(quadtree_extent.x_range.start + quarter, quadtree_extent.x_range.end - quarter),
+        Range(quadtree_extent.y_range.start + quarter, quadtree_extent.y_range.end - quarter),
+        Range(1, quarter + 1)
+    )
+    octree_extent_and_base = CuboidExtent(
+        octree_extent.x_range,
+        octree_extent.y_range,
+        Range(0, octree_extent.t_range.end)
+    )
+    return (octree_extent, octree_extent_and_base)
+
 
 
 def find_required_quadtree(cuboid):
@@ -35,23 +53,13 @@ def find_required_quadtree(cuboid):
         assert origin_square.width % 4 == 0
         # tiled_square is origin_square translated by an integer multiple so as
         # to contain the top left corner of the cuboid.
-        x_offset = (cuboid.x_range.start - origin_square.x_range.start) // origin_square.width * origin_square.width
-        y_offset = (cuboid.y_range.start - origin_square.y_range.start) // origin_square.height * origin_square.height
+        x_offset = int(cuboid.x_range.start - origin_square.x_range.start) // origin_square.width * origin_square.width
+        y_offset = int(cuboid.y_range.start - origin_square.y_range.start) // origin_square.height * origin_square.height
         tiled_square = RectangleExtent(
             Range(origin_square.x_range.start + x_offset, origin_square.x_range.end + x_offset),
             Range(origin_square.y_range.start + y_offset, origin_square.y_range.end + y_offset)
         )
-        quarter = origin_square.width // 4
-        octree_extent = CuboidExtent(
-            Range(tiled_square.x_range.start + quarter, tiled_square.x_range.end - quarter),
-            Range(tiled_square.y_range.start + quarter, tiled_square.y_range.end - quarter),
-            Range(1, quarter + 1)
-        )
-        octree_extent_and_base = CuboidExtent(
-            octree_extent.x_range,
-            octree_extent.y_range,
-            Range(0, octree_extent.t_range.end)
-        )
+        (octree_extent, octree_extent_and_base) = _octree_extent_from_quadtree(tiled_square)
         if cuboid not in octree_extent_and_base:
             return None
         return (tiled_square, octree_extent)
@@ -72,18 +80,69 @@ def find_required_quadtree(cuboid):
 def defaultdict_of_dicts():
     return defaultdict(dict)
 density_cache = defaultdict(defaultdict_of_dicts)
-density_cache_max_side_length = 32
+density_cache_max_side_length = 128
+density_cache_stats = CacheStats()
 
 def densities_square(population_quadtree, original_depth, resolution: int):
+    return densities_square_up_to_max_side_length(population_quadtree, original_depth, resolution)
+
+    children = np.array([[population_quadtree]], dtype=object)
+    child_resolution = resolution
+    block_count = 1 # per dimension
+    while resolution > density_cache_max_side_length and children[0, 0].level > 0:
+        children = flatten_quadtree_array(children)
+        assert child_resolution % 2 == 0
+        child_resolution //= 2
+        block_count *= 2
+    print("calculating child blocks")
+
+    # child_blocks = [[
+    #     densities_square_up_to_max_side_length(child, original_depth, child_resolution)
+    #     for child in row] for row in children]
+    # child_blocks = np.vectorize(lambda child: densities_square_up_to_max_side_length(child, original_depth, child_resolution), signature='()->(n,n)')(children)
+    # print(f"got child_blocks of shape {len(child_blocks)}x{len(child_blocks[0])}")
+    # # array_4d = np.array(child_blocks).reshape(block_count, block_count, child_resolution, child_resolution)
+    # array_4d = child_blocks.reshape(block_count, block_count, child_resolution, child_resolution)
+    # print("calculating total block")
+    # concatenated_rows = np.concatenate(array_4d, axis=2)
+    # total_block = np.concatenate(concatenated_rows, axis=0)
+
+    total_block = np.empty((resolution, resolution), dtype=np.float32)
+    for y in range(block_count):
+        for x in range(block_count):
+            child = children[y, x]
+            child_block = densities_square_up_to_max_side_length(child, original_depth, child_resolution)
+            total_block[y*child_resolution:(y+1)*child_resolution, x*child_resolution:(x+1)*child_resolution] = child_block
+
+    # child_blocks = [[
+    #     densities_square_up_to_max_side_length(child, original_depth, child_resolution)
+    #     for child in row] for row in children]
+    # total_block = np.block(child_blocks)
+
+    print("  done")
+    return total_block
+
+
+def densities_square_up_to_max_side_length(population_quadtree, original_depth, resolution: int):
     """
     Return a ndarray with shape (resolution, resolution) of float32 values in
     the range [0, 1] representing the population density in the
     population_quadtree. The population_quadtree must have been originally
     generated from a binary tree with depth `original_depth`.
     """
+    # print(resolution)
     def recurse():
-        children = [[densities_square(child, original_depth, resolution // 2) for child in row] for row in population_quadtree.children]
-        return np.block(children)
+        # children = [[
+        #     densities_square_up_to_max_side_length(child, original_depth, resolution // 2)
+        #     for child in row] for row in population_quadtree.children]
+        # return np.block(children)
+        block = np.empty((resolution, resolution), dtype=np.float32)
+        for y in range(2):
+            for x in range(2):
+                child = population_quadtree.children[y, x]
+                child_block = densities_square_up_to_max_side_length(child, original_depth, resolution // 2)
+                block[y*resolution//2:(y+1)*resolution//2, x*resolution//2:(x+1)*resolution//2] = child_block
+        return block
     def single_value():
         return np.full((resolution, resolution), population_quadtree.total_population() / population_quadtree.width() ** 2 / original_depth, dtype=np.float32)
     if resolution > density_cache_max_side_length:
@@ -93,7 +152,9 @@ def densities_square(population_quadtree, original_depth, resolution: int):
             return single_value()
     snapshot = density_cache[original_depth][population_quadtree].get(resolution)
     if snapshot is not None:
+        density_cache_stats.hits += 1
         return snapshot
+    density_cache_stats.misses += 1
     for res2, snap2 in sorted(density_cache[original_depth][population_quadtree].keys()):
         if res2 > resolution:
             # Downscale
@@ -169,7 +230,8 @@ def _snapshot_from_population_quadtree(population_quadtree, original_cuboid, tar
     translation = (x_range.start, y_range.start)
     scale = (x_range.length() / target_resolution.x, y_range.length() / target_resolution.y)
     transform = AffineTransform(translation=translation, scale=scale)
-    return warp(densities, transform, output_shape=(target_resolution.y, target_resolution.x), order=1, preserve_range=True)
+    out = warp(densities, transform, output_shape=(target_resolution.y, target_resolution.x), order=1, preserve_range=True)
+    return out
 
 def _get_resolution(original_cuboid, target_cuboid, target_resolution: Point2D) -> int:
     """
@@ -178,7 +240,7 @@ def _get_resolution(original_cuboid, target_cuboid, target_resolution: Point2D) 
     with good quality.
     """
     assert target_cuboid in original_cuboid
-    minimum_factor = 2
+    minimum_factor = 1.5
     minimum_resolutions = [
         target_resolution.x * original_cuboid.width / target_cuboid.width,
         target_resolution.y * original_cuboid.height / target_cuboid.height
@@ -211,17 +273,32 @@ def _extend_binary_tree(binary_tree: BinaryTree, octree_extent: CuboidExtent, ba
     )
     return (extended_binary_tree, extended_octree)
 
-def snapshot_from_grid(grid: LazyGrid, target_cuboid, target_resolution: Point2D):
+def _get_containing_quadtree_for_grid_from_quadtree(grid: GridFromQuadtree, target_cuboid: CuboidExtent):
+    (quadtree, quadtree_extent) = grid.initial_quadtree_and_extent()
+    while True:
+        (octree_extent, octree_extent_and_base) = _octree_extent_from_quadtree(quadtree_extent)
+        if target_cuboid in octree_extent_and_base:
+            return quadtree, octree_extent
+        (quadtree, quadtree_extent) = grid.expand_quadtree_and_extent(quadtree, quadtree_extent)
+
+def snapshot_from_grid(grid, target_cuboid, target_resolution: Point2D):
     """
     Create a densities snapshot of a rectangle contained within a grid,
     averaged across multiple generations; thus of a cuboid.
     """
-    (quadtree_extent, octree_extent) = find_required_quadtree(target_cuboid)
-    base_quadtree = grid.get_quadtree(quadtree_extent)
+    if isinstance(grid, LazyGrid):
+        (quadtree_extent, octree_extent) = find_required_quadtree(target_cuboid)
+        print(f"quadtree_extent: {quadtree_extent}")
+        base_quadtree = grid.get_quadtree(quadtree_extent)
+    else:
+        assert isinstance(grid, GridFromQuadtree)
+        (base_quadtree, octree_extent) = _get_containing_quadtree_for_grid_from_quadtree(grid, target_cuboid)
     octree = base_quadtree.generate_octree()
     binary_tree = octree.quadtrees()
     # The octree we generated starts at t=1. In order to be able to snapshot the
     # baselayer, we awkwardly extend the binary_tree by repeating the part of
     # the base layer that's underneath the octree.
     (binary_tree, octree_extent) = _extend_binary_tree(binary_tree, octree_extent, base_quadtree)
-    return densities_snapshot(binary_tree, octree_extent, target_cuboid, target_resolution)
+    snapshot = densities_snapshot(binary_tree, octree_extent, target_cuboid, target_resolution)
+    print('density cache', density_cache_stats)
+    return snapshot

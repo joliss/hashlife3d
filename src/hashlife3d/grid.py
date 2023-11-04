@@ -7,6 +7,18 @@ from .state import State
 from .extent import RectangleExtent, Point2D
 
 
+def empty_quadtree(extent: RectangleExtent, default=State.DEAD):
+    from .node import QuadtreeBranch, QuadtreeLeaf
+    assert extent.width == extent.height
+    if extent.width == 1:
+        return QuadtreeLeaf(default)
+    else:
+        child = empty_quadtree(RectangleExtent(
+            Range(extent.x_range.start, extent.x_range.start + extent.width // 2),
+            Range(extent.y_range.start, extent.y_range.start + extent.height // 2)))
+        return QuadtreeBranch(np.array([[child, child], [child, child]], dtype=object))
+
+
 class Grid(np.ndarray):
     @classmethod
     def from_list(cls, l):
@@ -62,7 +74,7 @@ class LazyGrid:
         if extent.width == 1:
             return QuadtreeLeaf(self[Point2D(extent.x_range.start, extent.y_range.start)])
         elif not any(extent.intersects(other_extent) for other_extent, _ in self._grids):
-            return self._empty_quadtree(extent)
+            return empty_quadtree(extent, self.default)
         else:
             half_width = extent.width // 2
             half_height = extent.height // 2
@@ -71,17 +83,6 @@ class LazyGrid:
                 [self.get_quadtree(nw), self.get_quadtree(ne)],
                 [self.get_quadtree(sw), self.get_quadtree(se)]
             ], dtype=object))
-
-    def _empty_quadtree(self, extent: RectangleExtent):
-        from .node import QuadtreeBranch, QuadtreeLeaf
-        assert extent.width == extent.height
-        if extent.width == 1:
-            return QuadtreeLeaf(self.default)
-        else:
-            child = self._empty_quadtree(RectangleExtent(
-                Range(extent.x_range.start, extent.x_range.start + extent.width // 2),
-                Range(extent.y_range.start, extent.y_range.start + extent.height // 2)))
-            return QuadtreeBranch(np.array([[child, child], [child, child]], dtype=object))
 
     def __getitem__(self, point: Point2D):
         values = []
@@ -97,3 +98,42 @@ class LazyGrid:
             else:
                 return State.DEAD
         return self.default
+
+
+class GridFromQuadtree:
+    def __init__(self, quadtree):
+        self.quadtree = quadtree
+
+    def __getitem__(self, point: Point2D):
+        return self.quadtree.get_state(point.x, point.y)
+
+    def initial_quadtree_and_extent(self):
+        return self.quadtree, RectangleExtent(
+            Range(0, self.quadtree.width),
+            Range(0, self.quadtree.height),
+        )
+
+    def expand_quadtree_and_extent(self, quadtree, extent: RectangleExtent):
+        from .node import QuadtreeBranch
+        empty_quadtree = empty_quadtree(extent)
+        if (extent.x_range.start + extent.x_range.end) // 2 > 0:
+            # Midpoint is positive; expand north-west
+            new_extent = RectangleExtent(
+                Range(extent.x_range.start - extent.width, extent.x_range.end),
+                Range(extent.y_range.start - extent.height, extent.y_range.end),
+            )
+            new_quadtree = QuadtreeBranch(np.array([
+                [empty_quadtree, empty_quadtree],
+                [empty_quadtree, quadtree]
+            ], dtype=object))
+        else:
+            # Midpoint is negative; expand south-east
+            new_extent = RectangleExtent(
+                Range(extent.x_range.start, extent.x_range.end + extent.width),
+                Range(extent.y_range.start, extent.y_range.end + extent.height),
+            )
+            new_quadtree = QuadtreeBranch(np.array([
+                [quadtree, empty_quadtree],
+                [empty_quadtree, empty_quadtree]
+            ], dtype=object))
+        return (new_quadtree, new_extent)

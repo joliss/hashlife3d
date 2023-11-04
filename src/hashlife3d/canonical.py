@@ -22,6 +22,14 @@ def intern_helper(func, *args):
         return ret
     else:
         func.cache_stats.misses += 1
+        # if func.__name__ == 'generate_octree' and args[0].width() == 4:
+        #     print(f'miss {func.__name__} {args[0].width()}')
+        if func.cache_stats.misses % 1000 == 0:
+            if func.__name__ == 'generate_octree':
+                print(f'miss {func.__name__} {args[0].width()}')
+            else:
+                print(f'miss {func.__name__}')
+                pass
         obj = func(*args)
         _intern_pool[key] = obj
         return obj

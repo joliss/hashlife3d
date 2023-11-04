@@ -32,24 +32,32 @@ def main():
     lazy_grid.add_grid(Point2D(0, 0), grid)
     (height, width) = grid.shape
     print(f"Grid size: {width}x{height}")
-    resolution = Point2D(192, 108)
+    resolution = Point2D(3840, 2160)
+    # resolution = Point2D(1920, 1080)
+    # resolution = Point2D(1280, 720)
     if height < width / resolution.x * resolution.y:
-        height = width / resolution.x * resolution.y
+        new_height = width / resolution.x * resolution.y
+        rectangle = RectangleExtent(
+            Range(0, width),
+            Range(-(new_height - height) / 2, (new_height - height) / 2 + height)
+            # Range(0, new_height)
+        )
     else:
-        width = height / resolution.y * resolution.x
-    rectangle = RectangleExtent(
-        Range(0, width),
-        Range(0, height)
-    )
-    print(f"Rectangle size: {width:.1f}x{height:.1f}")
+        new_width = height / resolution.y * resolution.x
+        rectangle = RectangleExtent(
+            Range(-(new_width - width) / 2, (new_width - width) / 2 + width),
+            # Range(0, new_width),
+            Range(0, height)
+        )
+    print(f"Rectangle size: {rectangle.width:.1f}x{rectangle.height:.1f}")
     densities = snapshot_from_grid(lazy_grid, CuboidExtent(rectangle.x_range, rectangle.y_range, Range(0, 1)), resolution);
     assert densities.shape == (resolution.y, resolution.x)
     image = Image.fromarray((densities * 255).astype(np.uint8), 'L')
     image.save('output.png')
-    return
-    duration = 1
-    fps = 2
-    speed_fn = _make_speed_fn(2, 60)
+    # return
+    duration = 30
+    fps = 60
+    speed_fn = _make_speed_fn(1, 60)
     create_video(
         grid=lazy_grid,
         speed_fn=speed_fn,
@@ -58,4 +66,5 @@ def main():
         duration=duration,
         fps=fps,
         output=output_file,
+        over_depth=lambda sec: 0.5
     )
