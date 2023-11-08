@@ -15,6 +15,7 @@ from .canonical import CacheStats
 from .node import BinaryTree, BinaryTreeBranch, BinaryTreeLeaf, flatten_quadtree_array, Quadtree, QuadtreeBranch
 from .extent import CuboidExtent, RectangleExtent, Point2D
 from .grid import LazyGrid, GridFromQuadtree
+from .progress import unwrap_with_progress_bar
 
 
 def _octree_extent_from_quadtree(quadtree_extent: RectangleExtent):
@@ -94,7 +95,6 @@ def densities_square(population_quadtree, original_depth, resolution: int):
         assert child_resolution % 2 == 0
         child_resolution //= 2
         block_count *= 2
-    print("calculating child blocks")
 
     # child_blocks = [[
     #     densities_square_up_to_max_side_length(child, original_depth, child_resolution)
@@ -119,7 +119,6 @@ def densities_square(population_quadtree, original_depth, resolution: int):
     #     for child in row] for row in children]
     # total_block = np.block(child_blocks)
 
-    print("  done")
     return total_block
 
 
@@ -288,17 +287,15 @@ def snapshot_from_grid(grid, target_cuboid, target_resolution: Point2D):
     """
     if isinstance(grid, LazyGrid):
         (quadtree_extent, octree_extent) = find_required_quadtree(target_cuboid)
-        print(f"quadtree_extent: {quadtree_extent}")
         base_quadtree = grid.get_quadtree(quadtree_extent)
     else:
         assert isinstance(grid, GridFromQuadtree)
         (base_quadtree, octree_extent) = _get_containing_quadtree_for_grid_from_quadtree(grid, target_cuboid)
-    octree = base_quadtree.generate_octree()
+    octree = unwrap_with_progress_bar(base_quadtree.generate_octree_with_progress())
     binary_tree = octree.quadtrees()
     # The octree we generated starts at t=1. In order to be able to snapshot the
     # baselayer, we awkwardly extend the binary_tree by repeating the part of
     # the base layer that's underneath the octree.
     (binary_tree, octree_extent) = _extend_binary_tree(binary_tree, octree_extent, base_quadtree)
     snapshot = densities_snapshot(binary_tree, octree_extent, target_cuboid, target_resolution)
-    print('density cache', density_cache_stats)
     return snapshot

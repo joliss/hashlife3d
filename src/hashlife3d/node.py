@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from .canonical import Canonical, interned
+from .canonical import Canonical, interned, interned_with_progress, unwrap_progress_iterable
 from .state import State
 from .grid import Grid
 
@@ -99,6 +99,20 @@ class Quadtree(KdQuadtree):
                 add_population_counts(child_populations[1, 0], child_populations[1, 1])
             )
 
+    @staticmethod
+    @interned
+    def empty(level: int, default: State = State.DEAD):
+        """
+        Return an empty quadtree of the given level.
+        """
+        if level == 0:
+            return QuadtreeLeaf(default)
+        else:
+            return QuadtreeBranch(np.array([
+                [Quadtree.empty(level - 1, default), Quadtree.empty(level - 1, default)],
+                [Quadtree.empty(level - 1, default), Quadtree.empty(level - 1, default)]
+            ], dtype=object))
+
 
 class QuadtreeLeaf(Quadtree, KdQuadtreeLeaf):
     def __post_init__(self):
@@ -127,16 +141,18 @@ class QuadtreeBranch(Quadtree, KdQuadtreeBranch):
         grids = np.vectorize(lambda child: child.to_grid(), otypes=[object])(self.children)
         return np.block(grids.tolist()).view(Grid)
 
-    @interned
-    def generate_octree(self):
+    @interned_with_progress(do_log=False)
+    def generate_octree_with_progress(self):
         """
         Given a (4n, 4n) Quadtree, generate a (n, 2n, 2n) Octree, computing n
         generations.
         """
+        do_yield = self != Quadtree.empty(self.level)
         assert self.level >= 2
         if self.level == 2:
             # n = 1 case
             return self._generate_octree_leaf()
+        progress_suffix = (0,) * (self.level - 3)
 
         # n is a multiple of 2 from here on out.
 
@@ -155,11 +171,33 @@ class QuadtreeBranch(Quadtree, KdQuadtreeBranch):
             dtype=object
         )
         assert red_square_containers.shape == (3, 3)
+        current_progress = 0
+        def generate_octrees(octree_ndarray):
+            """Basically np.vectorize(self.generate_octree), but with progress reporting."""
+            nonlocal current_progress
+            assert octree_ndarray.ndim == 2
+            r = np.empty(octree_ndarray.shape, dtype=object)
+            for y in range(octree_ndarray.shape[0]):
+                for x in range(octree_ndarray.shape[1]):
+                    next_progress = current_progress
+                    progress_base = (current_progress,)
+                    progress_end = (current_progress + 1,) + progress_suffix
+                    iterator = octree_ndarray[y, x].generate_octree_with_progress(progress_range=(progress_base, progress_end))
+                    try:
+                        while True:
+                            progress = next(iterator)
+                            next_progress = current_progress + 1
+                            if do_yield:
+                                yield progress
+                    except StopIteration as e:
+                        generated_octree = e.value
+                    r[y, x] = generated_octree
+                    current_progress = next_progress
+            return r
         # Instead of the red squares in the figure, we generate cuboids,
         # advancing n/2 generations. This is unlike the HashLife algorithm,
         # which instead of advancing just slices to generate its red squares.
-        generate_octree = np.vectorize(QuadtreeBranch.generate_octree, otypes=[object])
-        red_octrees = generate_octree(red_square_containers)
+        red_octrees = yield from generate_octrees(red_square_containers)
         assert red_octrees.shape == (3, 3)
         red_squares = np.vectorize(Octree.most_recent_quadtree, otypes=[object])(red_octrees)
         assert red_squares.shape == (3, 3)
@@ -170,7 +208,7 @@ class QuadtreeBranch(Quadtree, KdQuadtreeBranch):
         assert green_square_containers.shape == (2, 2)
         # Once again instead of the green squares in the figure, we generate
         # cuboids, advancing another n/2 generations.
-        green_octrees = generate_octree(green_square_containers)
+        green_octrees = yield from generate_octrees(green_square_containers)
         assert green_octrees.shape == (2, 2)
         # Finally, assemble the green cuboids and the parts of the red cuboids that
         # are behind them into a single octree.
@@ -194,6 +232,9 @@ class QuadtreeBranch(Quadtree, KdQuadtreeBranch):
                   for x in range(1, 5, 2)] for y in range(1, 5, 2)],
                 dtype=object)
         return OctreeBranch(np.stack([red_parts, green_octrees], axis=0))
+
+    def generate_octree(self):
+        return unwrap_progress_iterable(self.generate_octree_with_progress())
 
     def _generate_octree_leaf(self):
         assert self.level == 2

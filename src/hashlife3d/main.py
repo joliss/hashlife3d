@@ -4,7 +4,6 @@ import os
 import numpy as np
 from ranges import Range
 from PIL import Image
-from sympy import symbols, Eq, solve
 
 from .video import create_video
 from .grid import LazyGrid
@@ -24,6 +23,8 @@ def make_speed_fn(x0_val, y0_val, x1_val, y1_val, x2_val, y2_val):
 
     # Implemented by ChatGPT.
     # https://chat.openai.com/share/c9881422-f217-4209-8c5f-fcc4af01514e
+
+    from sympy import symbols, Eq, solve
 
     # Define the symbols
     a, b, c, x, y2 = symbols('a b c x y2')
@@ -86,8 +87,8 @@ def main():
     # return
     duration = 60
     fps = 30
-    # speed_fn = make_speed_fn(0, 1, 10, 7, 60, 1000)
-    speed_fn = make_speed_fn(0, 1, 100, 7, 60, 100000)
+    speed_fn = make_speed_fn(0, 1, 10, 7, 60, 1000)
+    # speed_fn = make_speed_fn(0, 1, 100, 7, 60, 100000)
     create_video(
         grid=grid,
         speed_fn=speed_fn,

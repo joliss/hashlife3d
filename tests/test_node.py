@@ -76,3 +76,13 @@ def test_flatten_quadtree_array():
     make_leaf = np.vectorize(
         lambda state: QuadtreeLeaf(state), otypes=[object])
     assert np.array_equal(four_by_four, make_leaf(Grid.from_str(blinker_str)))
+
+
+def test_empty_quadtree():
+    for state in (State.DEAD, State.UNINHABITABLE):
+        for level in range(4):
+            quadtree = Quadtree.empty(level, state)
+            assert quadtree.level == level
+            grid = quadtree.to_grid()
+            assert grid.shape == (2 ** level, 2 ** level)
+            assert np.all(grid == state)

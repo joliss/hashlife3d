@@ -5,18 +5,14 @@ from ranges import Range
 
 from .state import State
 from .extent import RectangleExtent, Point2D
+from .utils import int_log2
 
 
 def empty_quadtree(extent: RectangleExtent, default=State.DEAD):
-    from .node import QuadtreeBranch, QuadtreeLeaf
+    from .node import Quadtree
     assert extent.width == extent.height
-    if extent.width == 1:
-        return QuadtreeLeaf(default)
-    else:
-        child = empty_quadtree(RectangleExtent(
-            Range(extent.x_range.start, extent.x_range.start + extent.width // 2),
-            Range(extent.y_range.start, extent.y_range.start + extent.height // 2)))
-        return QuadtreeBranch(np.array([[child, child], [child, child]], dtype=object))
+    level = int_log2(extent.width)
+    return Quadtree.empty(level, default)
 
 
 class Grid(np.ndarray):
@@ -76,6 +72,7 @@ class LazyGrid:
         elif not any(extent.intersects(other_extent) for other_extent, _ in self._grids):
             return empty_quadtree(extent, self.default)
         else:
+            assert extent.width % 2 == 0 and extent.height % 2 == 0
             half_width = extent.width // 2
             half_height = extent.height // 2
             ((nw, ne), (sw, se)) = extent.split_x_y()
