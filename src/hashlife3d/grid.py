@@ -109,13 +109,13 @@ class GridFromQuadtree:
 
     def initial_quadtree_and_extent(self):
         return self.quadtree, RectangleExtent(
-            Range(0, self.quadtree.width),
-            Range(0, self.quadtree.height),
+            Range(0, self.quadtree.width()),
+            Range(0, self.quadtree.width()),
         )
 
     def expand_quadtree_and_extent(self, quadtree, extent: RectangleExtent):
         from .node import QuadtreeBranch
-        empty_quadtree = empty_quadtree(extent)
+        empty = empty_quadtree(extent)
         if (extent.x_range.start + extent.x_range.end) // 2 > 0:
             # Midpoint is positive; expand north-west
             new_extent = RectangleExtent(
@@ -123,8 +123,8 @@ class GridFromQuadtree:
                 Range(extent.y_range.start - extent.height, extent.y_range.end),
             )
             new_quadtree = QuadtreeBranch(np.array([
-                [empty_quadtree, empty_quadtree],
-                [empty_quadtree, quadtree]
+                [empty, empty],
+                [empty, quadtree]
             ], dtype=object))
         else:
             # Midpoint is negative; expand south-east
@@ -133,7 +133,7 @@ class GridFromQuadtree:
                 Range(extent.y_range.start, extent.y_range.end + extent.height),
             )
             new_quadtree = QuadtreeBranch(np.array([
-                [quadtree, empty_quadtree],
-                [empty_quadtree, empty_quadtree]
+                [quadtree, empty],
+                [empty, empty]
             ], dtype=object))
         return (new_quadtree, new_extent)
