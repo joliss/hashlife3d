@@ -67,6 +67,7 @@ def create_video(grid: LazyGrid, speed_fn, view_fn, resolution, duration, output
     """
     t = float(initial_generation)
     args = _ffmpeg_command(resolution, fps, output)
+    process = None
     process = subprocess.Popen(args, stdin=subprocess.PIPE)
     for frame in range(int(duration * fps)):
         seconds = frame / fps
@@ -85,9 +86,11 @@ def create_video(grid: LazyGrid, speed_fn, view_fn, resolution, duration, output
         assert np.all(luminances <= 1)
         assert luminances.shape == (resolution.y, resolution.x)
         frame_bytes = _to_rgb(luminances)
-        process.stdin.write(frame_bytes)
+        if process:
+            process.stdin.write(frame_bytes)
         t += generations
-    process.stdin.close()
-    process.wait()
-    if process.returncode != 0:
-        raise subprocess.CalledProcessError(process.returncode, args)
+    if process:
+        process.stdin.close()
+        process.wait()
+        if process.returncode != 0:
+            raise subprocess.CalledProcessError(process.returncode, args)
