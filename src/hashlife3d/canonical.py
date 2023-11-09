@@ -2,8 +2,11 @@ from functools import wraps
 from collections.abc import Iterable
 from dataclasses import dataclass
 import time
+from types import FunctionType
 
 import numpy as np
+
+from .state import State
 
 
 _intern_pool = {}
@@ -12,6 +15,8 @@ do_log = True
 
 @dataclass
 class CacheStats:
+    __slots__ = ('hits', 'misses', 'last_log')
+
     def __init__(self):
         self.hits = 0
         self.misses = 0
@@ -34,7 +39,7 @@ def unwrap_progress_iterable(iterator):
 
 def intern_helper(func, *args, do_log):
     assert do_log == False, 'do_log not implemented'
-    key = (func, *(_to_immutable(arg) for arg in args))
+    key = _make_key(func, *args)
     ret = _intern_pool.get(key)
     if ret is not None:
         if do_log:
@@ -49,7 +54,7 @@ def intern_helper(func, *args, do_log):
 
 
 def intern_helper_with_progress(func, *args, do_log, progress_range):
-    key = (func, *(_to_immutable(arg) for arg in args))
+    key = _make_key(func, *args)
     ret = _intern_pool.get(key)
     if ret is not None:
         if do_log:
@@ -107,6 +112,7 @@ def interned_with_progress(_function=None, *, do_log=False):
 
 
 class Canonical:
+    __slots__ = ()
     def __hash__(self):
         return id(self)
 
@@ -122,4 +128,14 @@ def _to_immutable(obj):
         # Trust that the items in the array are immutable
         return obj.tobytes()
     assert type(obj) not in (dict, tuple, list)
-    return obj
+    if type(obj) is int:
+        return obj.to_bytes(8)
+    # assert type(obj) in (type, FunctionType) or isinstance(obj, Canonical) or isinstance(obj, State)
+    # return bytes(str(id(obj)), 'utf-8')
+    return id(obj).to_bytes(8)
+
+def _make_key(func, *args):
+    r = id(func).to_bytes(8)
+    for arg in args:
+        r += _to_immutable(arg)
+    return r
