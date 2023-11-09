@@ -60,8 +60,8 @@ def main():
     pattern_file = sys.argv[1]
     output_file = sys.argv[2]
     grid, extent = parse_file(pattern_file)
-    # resolution = Point2D(3840, 2160)
-    resolution = Point2D(1920, 1080)
+    resolution = Point2D(3840, 2160)
+    # resolution = Point2D(1920, 1080)
     # resolution = Point2D(1280, 720)
     if extent.height < extent.width / resolution.x * resolution.y:
         new_height = extent.width / resolution.x * resolution.y
@@ -87,8 +87,8 @@ def main():
     # return
     duration = 60
     fps = 30
-    speed_fn = make_speed_fn(0, 1, 10, 7, 60, 1000)
-    # speed_fn = make_speed_fn(0, 1, 100, 7, 60, 100000)
+    # speed_fn = make_speed_fn(0, 1, 10, 7, 60, 1000)
+    speed_fn = make_speed_fn(0, 1, 10, 500, 60, 100000)``
     create_video(
         grid=grid,
         speed_fn=speed_fn,

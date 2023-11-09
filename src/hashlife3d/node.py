@@ -15,6 +15,8 @@ class KdQuadtree(Canonical):
     simultaneously. Thus in 2D, this is a quadtree; in 3D, an octree.
     """
 
+    __slots__ = ()
+
     def __repr__(self):
         return f"{self.__class__.__name__}(level={self.level})"
 
@@ -24,6 +26,7 @@ class KdQuadtree(Canonical):
 
 @dataclass(frozen=True, eq=False, repr=False)
 class KdQuadtreeLeaf(KdQuadtree):
+    __slots__ = ("element",)
     element: object
     level = 0
 
@@ -31,12 +34,15 @@ class KdQuadtreeLeaf(KdQuadtree):
         return f"{self.__class__.__name__}({repr(self.element)})"
 
 
-@dataclass(frozen=True, eq=False, repr=False)
+# @dataclass(frozen=True, eq=False, repr=False)
 class KdQuadtreeBranch(KdQuadtree):
+    # __slots__ = ("children", "level")
+    __slots__ = ()
     children: np.ndarray # k-dimensional array with shape (2, 2, 2, ...)
-    level: int = field(init=False)
+    # level: int = field(init=False)
 
-    def __post_init__(self):
+    def __init__(self, children):
+        self.children = children
         object.__setattr__(self, "level", self._checklevel())
         assert self.children.ndim == self.ndim
         # This assertion is too slow to run in production.
@@ -57,6 +63,7 @@ class Quadtree(KdQuadtree):
     A quadtree, specifically a tree pyramid with a square base.
     """
 
+    __slots__ = ()
     ndim = 2
 
     def width(self):
@@ -115,6 +122,7 @@ class Quadtree(KdQuadtree):
 
 
 class QuadtreeLeaf(Quadtree, KdQuadtreeLeaf):
+    __slots__ = ()
     def __post_init__(self):
         super().__post_init__()
         assert isinstance(self.element, State)
@@ -124,18 +132,17 @@ class QuadtreeLeaf(Quadtree, KdQuadtreeLeaf):
 
 
 class QuadtreeBranch(Quadtree, KdQuadtreeBranch):
+    __slots__ = ('nw', 'ne', 'sw', 'se', 'level')
+
+    def __init__(self, children):
+        assert children.shape == (2, 2)
+        self.nw, self.ne = children[0]
+        self.sw, self.se = children[1]
+        self.level = self._checklevel()
+
     @property
-    def nw(self):
-        return self.children[0, 0]
-    @property
-    def ne(self):
-        return self.children[0, 1]
-    @property
-    def sw(self):
-        return self.children[1, 0]
-    @property
-    def se(self):
-        return self.children[1, 1]
+    def children(self):
+        return np.array([[self.nw, self.ne], [self.sw, self.se]], dtype=object)
 
     def to_grid(self):
         grids = np.vectorize(lambda child: child.to_grid(), otypes=[object])(self.children)
@@ -261,6 +268,7 @@ class Octree(KdQuadtree):
     over n generations.
     """
 
+    __slots__ = ()
     ndim = 3
 
     def width(self):
@@ -278,6 +286,7 @@ class Octree(KdQuadtree):
 
 
 class OctreeLeaf(Octree, KdQuadtreeLeaf):
+    __slots__ = ()
     @property
     def quadtree(self):
         return self.element
@@ -292,6 +301,23 @@ class OctreeLeaf(Octree, KdQuadtreeLeaf):
 
 
 class OctreeBranch(Octree, KdQuadtreeBranch):
+    __slots__ = ('nw0', 'ne0', 'sw0', 'se0', 'nw1', 'ne1', 'sw1', 'se1', 'level')
+
+    def __init__(self, children):
+        assert children.shape == (2, 2, 2)
+        self.nw0, self.ne0 = children[0, 0]
+        self.sw0, self.se0 = children[0, 1]
+        self.nw1, self.ne1 = children[1, 0]
+        self.sw1, self.se1 = children[1, 1]
+        self.level = self._checklevel()
+
+    @property
+    def children(self):
+        return np.array([
+            [[self.nw0, self.ne0], [self.sw0, self.se0]],
+            [[self.nw1, self.ne1], [self.sw1, self.se1]]
+        ], dtype=object)
+
     @interned
     def quadtrees(self):
         return BinaryTreeBranch(np.array([
@@ -305,6 +331,7 @@ class BinaryTree(KdQuadtree):
     This binary tree is the 1-dimensional equivalent to the quadtree (in 2D) or octree (in 3D).
     """
 
+    __slots__ = ()
     ndim = 1
 
     def depth(self):
@@ -339,6 +366,7 @@ class BinaryTree(KdQuadtree):
 
 
 class BinaryTreeLeaf(BinaryTree, KdQuadtreeLeaf):
+    __slots__ = ()
     def __iter__(self):
         yield self.element
 
@@ -347,6 +375,17 @@ class BinaryTreeLeaf(BinaryTree, KdQuadtreeLeaf):
 
 
 class BinaryTreeBranch(BinaryTree, KdQuadtreeBranch):
+    __slots__ = ('first', 'last', 'level')
+
+    def __init__(self, children):
+        assert children.shape == (2,)
+        self.first, self.last = children
+        self.level = self._checklevel()
+
+    @property
+    def children(self):
+        return np.array([self.first, self.last], dtype=object)
+
     def __iter__(self):
         yield from self.children[0]
         yield from self.children[1]

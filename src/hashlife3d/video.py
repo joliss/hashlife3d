@@ -72,6 +72,7 @@ def create_video(grid: LazyGrid, speed_fn, view_fn, resolution, duration, output
     for frame in range(int(duration * fps)):
         seconds = frame / fps
         generations = speed_fn(seconds) / fps
+        assert generations >= 0
         rectangle = view_fn(seconds)
         cuboid = CuboidExtent(
             x_range=rectangle.x_range,
