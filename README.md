@@ -1,3 +1,8 @@
+# HashLife 3D
+
+A variation of the HashLife algorithm for Conway's Game of Life, caching not
+just the outcome grid, but also all intermediate grid states.
+
 ## Installing dependencies
 
 ```
